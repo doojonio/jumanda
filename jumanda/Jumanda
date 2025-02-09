@@ -55,8 +55,6 @@ websocket '/chat' => sub ($c) {
 
     push @history, @new_msgs;
 
-    use Data::Dumper; warn Dumper(\@history);
-
     my $resp = $ai->chat(\@history, 1.2);
     $c->tg->sendMessage({chat_id => $ENV{TELEGRAM_CHANNEL}, text => "He asked: $msg\nThe universe answered: $resp"});
 
