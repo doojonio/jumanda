@@ -1,0 +1,173 @@
+#!/usr/bin/env perl
+use Mojolicious::Lite -signatures, -async_await;
+
+use Mojo::Pg;
+use Mojo::Promise;
+use Redis;
+
+package TgBot {
+  use Mojo::Base 'Telegram::Bot::Brain';
+
+  has token => $ENV{TELEGRAM_TOKEN};
+  sub init {
+    my $self = shift;
+  }
+};
+
+get '/' => async sub ($c) {
+  $c->render(template => 'index');
+};
+
+websocket '/chat' => sub ($c) {
+  my $id = int(rand(999));
+  $c->send("Hi, $id.");
+
+  $c->on(message => sub ($c, $msg) {
+    my $ai = $c->ai;
+    my $tg = $c->tg;
+    my $redis = $c->db->redis;
+
+    my $chat_k = "chat:$id";
+
+    my @history;
+
+    for my $hmsg ($redis->lrange($chat_k, 0, -1)) {
+      my ($role, $cont) = split(/:/, $hmsg, 2);
+      push @history, {
+        'role'    => $role,
+        'content'  => $cont,
+      };
+    }
+
+    my @new_msgs;
+    unless(@history) {
+      push @new_msgs, {
+        'role'    => 'system',
+        'content'  => 'You are the universe. Answer to user like he is speaking with universe.',
+      };
+    }
+
+    push @new_msgs, {
+        'role'    => 'user',
+        'content'  => $msg,
+
+    };
+
+    push @history, @new_msgs;
+
+    use Data::Dumper; warn Dumper(\@history);
+
+    my $resp = $ai->chat(\@history, 1.2);
+    $c->tg->sendMessage({chat_id => $ENV{TELEGRAM_CHANNEL}, text => "He asked: $msg\nThe universe answered: $resp"});
+
+    push @new_msgs, {
+        'role'    => 'assistant',
+        'content'  => $resp,
+    };
+
+    for my $new (@new_msgs) {
+      $redis->rpush($chat_k, join(':', $new->{role}, $new->{content}));
+    }
+
+    $c->send($resp);
+  });
+};
+
+helper 'db.pg' => sub ($c) {
+  return Mojo::Pg->new("postgresql://$ENV{DATABASE_USER}:$ENV{DATABASE_PASSWORD}\@$ENV{DATABASE_HOST}/jumanda")
+};
+
+helper 'db.redis' => sub ($c) {
+  return Redis->new();
+};
+
+helper 'tg' => sub ($c) {
+  return TgBot->new;
+};
+
+helper 'ai' => sub ($c) {
+  use AI::Chat;
+
+  return AI::Chat->new(
+      key   => $ENV{OPENAI_TOKEN},
+      api   => 'OpenAI',
+      model => 'gpt-4o-mini',
+  );
+};
+
+
+
+app->start;
+__DATA__
+
+@@ index.html.ep
+% layout 'default';
+% title 'Welcome';
+<h1>Welcome to the Mojolicious real-time web framework!</h1>
+
+@@ layouts/default.html.ep
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    #chat-log {
+      padding: 10px;
+      border: 1px solid #ccc;
+      width: 500px;
+      height: 300px;
+      overflow-y: auto;
+    }
+    #chat-input {
+      width: 500px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    #send-btn {
+      padding: 10px;
+      background-color: #4CAF50;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Chat</h1>
+  <div id="chat-log"></div>
+  <input id="chat-input" type="text" placeholder="Type a message...">
+  <button id="send-btn">Send</button>
+
+  <script>
+    const socket = new WebSocket('ws://localhost:3000/chat');
+
+    socket.onmessage = (event) => {
+      const chatLog = document.getElementById('chat-log');
+      chatLog.innerHTML += `<p>${event.data}</p>`;
+      chatLog.scrollTop = chatLog.scrollHeight;
+    };
+
+    socket.onopen = () => {
+      console.log('Connected to the WebSocket server');
+    };
+
+    socket.onclose = () => {
+      console.log('Disconnected from the WebSocket server');
+    };
+
+    socket.onerror = (error) => {
+      console.log('Error occurred:', error);
+    };
+
+    document.getElementById('send-btn').addEventListener('click', () => {
+      const message = document.getElementById('chat-input').value;
+      socket.send(message);
+      document.getElementById('chat-input').value = '';
+    });
+  </script>
+</body>
+</html>

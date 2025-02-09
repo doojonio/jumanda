@@ -1,0 +1,10 @@
+requires 'Mojolicious';
+requires 'Mojo::Pg';
+requires 'Redis';
+requires 'Future::AsyncAwait';
+requires 'Telegram::Bot';
+requires 'AI::Chat';
+
+on 'develop' => sub {
+  recommends 'DDP';
+};

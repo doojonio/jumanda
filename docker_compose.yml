@@ -1,0 +1,34 @@
+version: '3'
+services:
+  jumanda:
+    build: ./jumanda/
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./jumanda/:/app/
+    environment:
+      - DATABASE_HOST=localhost
+      - DATABASE_USER=jumanda
+      - DATABASE_PASSWORD=s3cr3t_123
+      - REDIS_SERVER=localhost:6379
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHANNEL=${TELEGRAM_CHANNEL}
+      - OPENAI_TOKEN=${OPENAI_TOKEN}
+    network_mode: host
+  db:
+    image: postgres
+    environment:
+      - POSTGRES_USER=jumanda
+      - POSTGRES_PASSWORD=s3cr3t_123
+    ports:
+      - 5432:5432
+  redis:
+    image: redis:latest
+    volumes:
+      - ./data:/data
+    restart: always
+    ports:
+      - 6379:6379
